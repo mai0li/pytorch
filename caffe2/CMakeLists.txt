@@ -75,6 +75,7 @@ if(INTERN_BUILD_ATEN_OPS)
 
   # Add source, includes, and libs to lists
   list(APPEND Caffe2_CPU_SRCS ${ATen_CPU_SRCS})
+
   list(APPEND Caffe2_GPU_SRCS ${ATen_CUDA_SRCS})
   list(APPEND Caffe2_GPU_SRCS_W_SORT_BY_KEY ${ATen_CUDA_SRCS_W_SORT_BY_KEY})
   list(APPEND Caffe2_HIP_SRCS ${ATen_HIP_SRCS})
@@ -85,6 +86,7 @@ if(INTERN_BUILD_ATEN_OPS)
   list(APPEND Caffe2_CPU_TEST_SRCS ${ATen_CORE_TEST_SRCS})
   list(APPEND Caffe2_VULKAN_TEST_SRCS ${ATen_VULKAN_TEST_SRCS})
   list(APPEND Caffe2_CPU_INCLUDE ${ATen_CPU_INCLUDE})
+
   list(APPEND Caffe2_GPU_INCLUDE ${ATen_CUDA_INCLUDE})
   list(APPEND Caffe2_HIP_INCLUDE ${ATen_HIP_INCLUDE})
   list(APPEND Caffe2_VULKAN_INCLUDE ${ATen_VULKAN_INCLUDE})
@@ -168,7 +170,7 @@ endif()
 
 # Debug messages - if you want to get a list of source files, enable the
 # following.
-if(FALSE)
+if(TRUE)
   message(STATUS "CPU sources: ")
   foreach(tmp ${Caffe2_CPU_SRCS})
     message(STATUS "  " ${tmp})
@@ -442,7 +444,13 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
 
   set(TORCH_SRCS ${GENERATED_CXX_TORCH})
   list(APPEND TORCH_SRCS ${GENERATED_H_TORCH})
-  append_filelist("libtorch_cmake_sources" TORCH_SRCS)
+  # append_filelist("libtorch_cmake_sources" TORCH_SRCS)
+  append_filelist("libtorch_lite_cmake_sources" TORCH_SRCS)
+
+  message(STATUS "Interpreter sources: ")
+  foreach(tmp ${TORCH_SRCS})
+    message(STATUS "  " ${tmp})
+  endforeach()
 
   # Required workaround for LLVM 9 includes.
   if(NOT MSVC)
@@ -484,26 +492,26 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
   endif()
 
   if(NOT INTERN_BUILD_MOBILE)
-    list(APPEND TORCH_SRCS
-      ${TORCH_SRC_DIR}/csrc/api/src/jit.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/serialization/onnx.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/serialization/export.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/serialization/export_module.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/codegen/fuser/cpu/fused_kernel.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/api/module_save.cpp
-      ${TORCH_SRC_DIR}/csrc/utils/byte_order.cpp
-    )
-    # Disable legacy import of building without Caffe2 support
-    if(BUILD_CAFFE2)
-      list(APPEND TORCH_SRCS
-        ${TORCH_SRC_DIR}/csrc/jit/serialization/import_legacy.cpp
-      )
-    else()
-      set_source_files_properties(
-        ${TORCH_SRC_DIR}/csrc/jit/serialization/import.cpp
-        PROPERTIES COMPILE_FLAGS "-DC10_DISABLE_LEGACY_IMPORT"
-      )
-    endif()
+    # list(APPEND TORCH_SRCS
+    #   ${TORCH_SRC_DIR}/csrc/api/src/jit.cpp
+    #   ${TORCH_SRC_DIR}/csrc/jit/serialization/onnx.cpp
+    #   ${TORCH_SRC_DIR}/csrc/jit/serialization/export.cpp
+    #   ${TORCH_SRC_DIR}/csrc/jit/serialization/export_module.cpp
+    #   ${TORCH_SRC_DIR}/csrc/jit/codegen/fuser/cpu/fused_kernel.cpp
+    #   ${TORCH_SRC_DIR}/csrc/jit/api/module_save.cpp
+    #   ${TORCH_SRC_DIR}/csrc/utils/byte_order.cpp
+    # )
+    # # Disable legacy import of building without Caffe2 support
+    # if(BUILD_CAFFE2)
+    #   list(APPEND TORCH_SRCS
+    #     ${TORCH_SRC_DIR}/csrc/jit/serialization/import_legacy.cpp
+    #   )
+    # else()
+    #   set_source_files_properties(
+    #     ${TORCH_SRC_DIR}/csrc/jit/serialization/import.cpp
+    #     PROPERTIES COMPILE_FLAGS "-DC10_DISABLE_LEGACY_IMPORT"
+    #   )
+    # endif()
     if(USE_DISTRIBUTED AND NOT WIN32)
       append_filelist("libtorch_distributed_sources" TORCH_SRCS)
     endif()
@@ -656,6 +664,7 @@ if(HAVE_SOVERSION)
   set_target_properties(torch_cpu PROPERTIES
       VERSION ${TORCH_VERSION} SOVERSION ${TORCH_SOVERSION})
 endif()
+message(STATUS ${torch_cpu})
 torch_compile_options(torch_cpu)  # see cmake/public/utils.cmake
 
 if(USE_LLVM AND LLVM_FOUND)
@@ -680,6 +689,7 @@ file(WRITE ${DUMMY_EMPTY_FILE} ${DUMMY_FILE_CONTENT})
 # Wrapper library for people who link against torch and expect both CPU and CUDA support
 # Contains "torch_cpu" and "torch_cuda"
 add_library(torch ${DUMMY_EMPTY_FILE})
+
 if(HAVE_SOVERSION)
   set_target_properties(torch PROPERTIES
       VERSION ${TORCH_VERSION} SOVERSION ${TORCH_SOVERSION})
@@ -1309,6 +1319,49 @@ if(BUILD_MOBILE_TEST)
     add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${test_name}>)
   endforeach()
 endif()
+
+# message(STATUS "torch_library: ")
+# foreach(tmp ${torch_library})
+#   message(STATUS "  " ${tmp})
+# endforeach()
+
+# Get all propreties that cmake supports
+execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
+
+# Convert command output into a CMake list
+STRING(REGEX REPLACE ";" "\\\\;" CMAKE_PROPERTY_LIST "${CMAKE_PROPERTY_LIST}")
+STRING(REGEX REPLACE "\n" ";" CMAKE_PROPERTY_LIST "${CMAKE_PROPERTY_LIST}")
+
+function(print_properties)
+    message ("CMAKE_PROPERTY_LIST = ${CMAKE_PROPERTY_LIST}")
+endfunction(print_properties)
+
+function(print_target_properties tgt)
+    if(NOT TARGET ${tgt})
+      message("There is no target named '${tgt}'")
+      return()
+    endif()
+
+    foreach (prop ${CMAKE_PROPERTY_LIST})
+        string(REPLACE "<CONFIG>" "${CMAKE_BUILD_TYPE}" prop ${prop})
+    # Fix https://stackoverflow.com/questions/32197663/how-can-i-remove-the-the-location-property-may-not-be-read-from-target-error-i
+    if(prop STREQUAL "LOCATION" OR prop MATCHES "^LOCATION_" OR prop MATCHES "_LOCATION$")
+        continue()
+    endif()
+        # message ("Checking ${prop}")
+        get_property(propval TARGET ${tgt} PROPERTY ${prop} SET)
+        if (propval)
+            get_target_property(propval ${tgt} ${prop})
+            message ("${tgt} ${prop} = ${propval}")
+        endif()
+    endforeach(prop)
+endfunction(print_target_properties)
+
+add_executable(lite_interpreter_demo ${TORCH_ROOT}/test/cpp/demos/main.cpp)
+target_link_libraries(${lite_interpreter_demo} torch_cpu)
+print_target_properties(torch)
+print_target_properties(lite_interpreter_demo)
+print_target_properties(torch_cpu)
 
 # ---[ Test binaries.
 if(BUILD_TEST)
